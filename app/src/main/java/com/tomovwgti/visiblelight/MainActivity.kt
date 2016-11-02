@@ -2,29 +2,27 @@ package com.tomovwgti.visiblelight
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
 import android.media.Image
 import android.media.ImageReader
+import android.os.Build
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.support.annotation.NonNull
-import android.support.v4.app.ActivityCompat
-import android.support.v4.content.PermissionChecker
 import android.util.Log
 import android.util.Size
 import android.view.*
 import android.widget.Toast
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.common.HybridBinarizer
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
 import java.util.*
+import android.support.v4.content.ContextCompat.checkSelfPermission
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,6 +33,15 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Android 6, API 23以上でパーミッシンの確認
+        if (Build.VERSION.SDK_INT >= 23) {
+            requestCameraPermission()
+        } else {
+            startCamera()
+        }
+    }
+
+    fun startCamera() {
         val textureView = findViewById(R.id.texture_view) as TextureView
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -51,19 +58,7 @@ class MainActivity : AppCompatActivity() {
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
             }
         }
-
-        // パーミッションを持っているか確認する
-        if (PermissionChecker.checkSelfPermission(this, Manifest.permission.CAMERA)
-                != PackageManager.PERMISSION_GRANTED) {
-            // パーミッションをリクエストする
-            requestCameraPermission()
-        } else {
-            mCamera = Camera(textureView)
-        }
-    }
-
-    fun startCamera() {
-        mCamera = Camera(findViewById(R.id.texture_view) as TextureView)
+        mCamera = Camera(textureView)
     }
 
     internal inner class Camera(private val mTextureView: TextureView) {
@@ -181,33 +176,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * カメラパーミッションの取得
+     */
+    private fun requestCameraPermission() {
+        // パーミッションを持っているか確認する
+        if (checkSelfPermission(this, Manifest.permission.CAMERA) === PackageManager.PERMISSION_GRANTED) {
+            // カメラ起動
+            startCamera()
+            return
+        }
+
+        // 権限を取得する
+        requestPermissions(arrayOf(Manifest.permission.CAMERA), REQUEST_CODE_CAMERA_PERMISSION)
+    }
+
+    /**
      * カメラアクセス許可OK/NG
      */
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         if (REQUEST_CODE_CAMERA_PERMISSION === requestCode) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // カメラアクセス許可
-                startCamera()
+                restartFlag = true
+                finish()
             } else {
                 // アクセス拒否
                 Toast.makeText(this, "カメラの使用を拒否されました", Toast.LENGTH_SHORT).show()
             }
         }
-    }
-
-    /**
-     * カメラパーミッションの取得
-     */
-    private fun requestCameraPermission() {
-        if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {
-            // 権限をリクエスト
-            requestPermissions(arrayOf(Manifest.permission.CAMERA),
-                    REQUEST_CODE_CAMERA_PERMISSION)
-            return
-        }
-        // 権限を取得する
-        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA),
-                REQUEST_CODE_CAMERA_PERMISSION)
     }
 
     private val mOnImageAvailableListener = ImageReader.OnImageAvailableListener { reader ->
@@ -228,6 +224,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        if (restartFlag) {
+            restartFlag = false
+            // リスタート
+            val mainActivity = Intent(this, MainActivity::class.java)
+            startActivity(mainActivity)
+        }
+    }
     companion object {
         private val TAG = MainActivity::class.java.simpleName
         private val REQUEST_CODE_CAMERA_PERMISSION = 0x99
@@ -237,5 +242,6 @@ class MainActivity : AppCompatActivity() {
         private var mPreviewSession: CameraCaptureSession? = null
         private var mImageReader: ImageReader? = null
         private var backgroundHandler: Handler? = null
+        private var restartFlag: Boolean = false
     }
 }
